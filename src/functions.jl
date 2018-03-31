@@ -14,7 +14,7 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
 
     @showprogress refreshtime for gen = 1:nbGen
     # for gen = 1:nbGen
-        
+
         for i = 1:2:popSize
 
             pa = tournament_selection(P)
@@ -31,7 +31,7 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
 
         fast_non_dominated_sort!(P, sense)
         sort!(P, by = x->x.rank, alg=Base.Sort.QuickSort)
-        
+
         let f::Int = 1
             ind = 0
             indnext = findlast(x->x.rank==f, P)
@@ -48,6 +48,7 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
         gen % plotevery == 0 && fplot(P)
     end
     fplot(P)
+    println("Algorithm finished!")
     filter(x->x.rank==1, view(P, 1:popSize))
 end
 
@@ -77,7 +78,7 @@ function fast_non_dominated_sort!(pop::AbstractVector{T}, sense) where {T}
 
     k = UInt16(2)
     @inbounds while any(==(k-one(UInt16)), (p.rank for p in pop)) #ugly workaround for #15276
-        for p in pop 
+        for p in pop
             if p.rank == k-one(UInt16)
                 for q in p.dom_list
                     pop[q].dom_count -= one(UInt16)
