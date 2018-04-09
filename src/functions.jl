@@ -1,4 +1,4 @@
-function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y}} where {G,Ph,Y}
+function _nsga(::indiv{G,Ph,Y}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y}} where {G,Ph,Y}
 
     popSize = max(popSize, length(seed))
     isodd(popSize) && (popSize += 1)
@@ -10,10 +10,9 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
     for i=1:popSize
         P[popSize+i] = deepcopy(P[i])
     end
-    fast_non_dominated_sort!(view(P, 1:popSize), sense)
+    fast_non_dominated_sort!(view(P, 1:popSize), sense, lexico)
 
     @showprogress refreshtime for gen = 1:nbGen
-    # for gen = 1:nbGen
 
         for i = 1:2:popSize
 
@@ -29,7 +28,7 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
             eval!(P[popSize+i+1], fdecode!, z, fCV)
         end
 
-        fast_non_dominated_sort!(P, sense)
+        fast_non_dominated_sort!(P, sense, lexico)
         sort!(P, by = x->x.rank, alg=Base.Sort.QuickSort)
 
         let f::Int = 1
@@ -45,14 +44,16 @@ function _nsga(::indiv{G,Ph,Y}, sense, popSize, nbGen, init, z, fdecode, fdecode
             sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
         end
 
-        gen % plotevery == 0 && fplot(P)
+        gen % plotevery == 0 && fplot(P, gen)
     end
-    fplot(P)
-    println("Algorithm finished!")
-    filter(x->x.rank==1, view(P, 1:popSize))
+
+    fplot(P, nbGen)    #(default)
+    #filter(x->x.rank==1, view(P, 1:popSize)) #comment if you want to plot all solutions (unfiltered)
+    #fplot(view(P, 1:popSize), 0) #DEBUG
+    view(P, 1:popSize)  #returns the first half of array (dominated and not)
 end
 
-function fast_non_dominated_sort!(pop::AbstractVector{T}, sense) where {T}
+function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, lexico::Bool) where {T}
     n = length(pop)
 
     for p in pop
@@ -63,10 +64,10 @@ function fast_non_dominated_sort!(pop::AbstractVector{T}, sense) where {T}
 
     @inbounds for i in 1:n
         for j in i+1:n
-            if dominates(sense, pop[i], pop[j])
+            if dominates(sense, pop[i], pop[j], lexico)
                 push!(pop[i].dom_list, j)
                 pop[j].dom_count += 1
-            elseif dominates(sense, pop[j], pop[i])
+            elseif dominates(sense, pop[j], pop[i], lexico)
                 push!(pop[j].dom_list, i)
                 pop[i].dom_count += 1
             end

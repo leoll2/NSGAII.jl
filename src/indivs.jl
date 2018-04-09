@@ -17,7 +17,15 @@ end
 struct Max end
 struct Min end
 
-function dominates(::Min, a::indiv, b::indiv)
+function dominates(sense, a::indiv, b::indiv, lexico::Bool)
+    if lexico
+        return lexico_dominates(sense, a, b)
+    else
+        return standard_dominates(sense, a, b)
+    end
+end
+
+function standard_dominates(::Min, a::indiv, b::indiv)
     a.CV != b.CV && return a.CV < b.CV
     res = false
     for i in eachindex(a.y)
@@ -27,7 +35,7 @@ function dominates(::Min, a::indiv, b::indiv)
     res
 end
 
-function dominates(::Max, a::indiv, b::indiv)
+function standard_dominates(::Max, a::indiv, b::indiv)
     a.CV != b.CV && return a.CV < b.CV
     res = false
     for i in eachindex(a.y)
@@ -37,12 +45,48 @@ function dominates(::Max, a::indiv, b::indiv)
     res
 end
 
+function lexico_dominates(::Min, a::indiv, b::indiv)
+    a.CV != b.CV && return a.CV < b.CV
+    for p in reverse(eachindex(a.y[1]))    #for each power p
+        dominates = false
+        dominated = false
+        for i in eachindex(a.y)            #for each objective i
+            a.y[i][p] > b.y[i][p] && (dominated=true)
+            a.y[i][p] < b.y[i][p] && (dominates=true)
+        end
+        if (dominates && !dominated)
+            return true
+        elseif (dominated && !dominates)
+            return false
+        end
+    end
+    return false
+end
+
+function lexico_dominates(::Max, a::indiv, b::indiv)
+    a.CV != b.CV && return a.CV < b.CV
+    for p in reverse(eachindex(a.y[1]))    #for each power p
+        dominates = false
+        dominated = false
+        for i in eachindex(a.y)            #for each objective i
+            a.y[i][p] < b.y[i][p] && (dominated=true)
+            a.y[i][p] > b.y[i][p] && (dominates=true)
+        end
+        if (dominates && !dominated)
+            return true
+        elseif (dominated && !dominates)
+            return false
+        end
+    end
+    return false
+end
+
 Base.:(==)(a::indiv, b::indiv) = a.x == b.x
 Base.hash(a::indiv) = hash(a.x)
 Base.isless(a::indiv, b::indiv) = a.rank < b.rank || a.rank == b.rank && a.crowding >= b.crowding #Comparison operator for tournament selection
 Base.show(io::IO, ind::indiv) = print(io, "indiv($(repr_pheno(ind.pheno)) : $(ind.y) | rank : $(ind.rank))")
 repr_pheno(x) = repr(x)
-function repr_pheno(x::Union{BitVector, Vector{Bool}}) 
+function repr_pheno(x::Union{BitVector, Vector{Bool}})
     res = map(x->x ? '1' : '0', x)
     if length(res) <= 40
         return "["*String(res)*"]"
