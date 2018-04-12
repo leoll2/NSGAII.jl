@@ -1,8 +1,8 @@
-function _nsga(::indiv{G,Ph,Y}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y}} where {G,Ph,Y}
+function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y,C}} where {G,Ph,Y,C}
 
     popSize = max(popSize, length(seed))
     isodd(popSize) && (popSize += 1)
-    P = Vector{indiv{G,Ph,Y}}(undef, 2*popSize)
+    P = Vector{indiv{G,Ph,Y,C}}(undef, 2*popSize)
     P[1:popSize-length(seed)] .= [create_indiv(init(), fdecode, z, fCV) for _=1:popSize-length(seed)]
     for i = 1:length(seed)
         P[popSize-length(seed)+i] = create_indiv(convert(G, seed[i]), fdecode, z, fCV)
@@ -94,24 +94,39 @@ function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, lexico::Bool) w
     nothing
 end
 
-function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y}}) where {X, G, Y}
+function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y,C}}) where {X, G, Y, C}
+    @assert (C <: Number || C <: AbstractArray)
     if length(first(pop).y) == 2
         sort!(pop, by=x->x.y[1])
         pop[1].y[1] == pop[end].y[1] && return #Don't waste time if all indivs are the same
-        pop[1].crowding = pop[end].crowding = Inf
+        if C <: Number
+            pop[1].crowding = pop[end].crowding = Inf
+        else
+            pop[1].crowding[0] = pop[end].crowding[0] = Inf
+        end
         @inbounds for i = 2:length(pop)-1
             pop[i].crowding = (pop[i+1].y[1]-pop[i-1].y[1]) / (pop[end].y[1]-pop[1].y[1])
             pop[i].crowding += (pop[i-1].y[2]-pop[i+1].y[2]) / (pop[1].y[2]-pop[end].y[2])
         end
     else
-        for ind in pop
-            ind.crowding = 0.
+        for ind in pop      #zero out the crowding distance
+            if C <: Number
+                ind.crowding = 0.
+            else
+                for p in eachindex(ind.crowding)
+                    ind.crowding[p] = 0.
+                end
+            end
         end
         @inbounds for j = 1:length(first(pop).y) # Foreach objective
             let j = j #https://github.com/JuliaLang/julia/issues/15276
                 sort!(pop, by = x-> x.y[j]) #sort by the objective value
             end
-            pop[1].crowding = pop[end].crowding = Inf #Assign infinite value to extremas
+            if C <: Number      #Assign infinite value to extremas
+                pop[1].crowding = pop[end].crowding = Inf
+            else
+                pop[1].crowding[0] = pop[end].crowding[0] = Inf
+            end
             if pop[1].y[j] != pop[end].y[j]
                 for i = 2:length(pop)-1
                     pop[i].crowding += (pop[i+1].y[j]-pop[i-1].y[j]) / (pop[end].y[j]-pop[1].y[j])

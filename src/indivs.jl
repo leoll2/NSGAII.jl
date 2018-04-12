@@ -1,17 +1,29 @@
-mutable struct indiv{G, P, Y}#Genotype, Phenotype, Type(Y_N)
+mutable struct indiv{G, P, Y, C}
     x::G
     pheno::P
     y::Y
     CV::Float64
     rank::UInt16
-    crowding::Float64
+    crowding::C
     dom_count::UInt16
     dom_list::Vector{UInt16}
-    indiv(x::G, pheno::P, y::Y, cv) where {G,P,Y} = new{G, P, Y}(x, pheno, y, cv, zero(UInt16), 0., zero(UInt16), UInt16[])
+    indiv(x::G, pheno::P, y::Y, cv, crowding::C) where {G,P,Y,C} =
+        new{G, P, Y, C}(x, pheno, y, cv, zero(UInt16), crowding, zero(UInt16), UInt16[])
 end
 function create_indiv(x, fdecode, z, fCV)
     pheno = fdecode(x)
-    indiv(x, pheno, z(pheno), fCV(pheno))
+    y = z(pheno)
+    crowd_type = typeof(y[1])  #determine if the crowding distance is number or array-like
+    crowd_length = length(y[1])
+    if crowd_length == 1
+        crowding = zero(crowd_type)
+    else
+        crowding = deepcopy(y[1])
+        for i in eachindex(crowding)
+            crowding[i] = 0.
+        end
+    end
+    indiv(x, pheno, y, fCV(pheno), crowding)
 end
 
 struct Max end
