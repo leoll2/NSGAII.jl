@@ -43,7 +43,7 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
             crowding_distance_assignment!(view(P, ind+1:indnext))
             sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
         end
-
+        gen == plotevery && println("Loading plot...")
         gen % plotevery == 0 && fplot(P, gen)
     end
 
@@ -98,7 +98,7 @@ function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y,C}}) wher
     @assert (C <: Number || C <: AbstractArray)
     if length(first(pop).y) == 2
         sort!(pop, by=x->x.y[1])
-        pop[1].y[1] == pop[end].y[1] && return #Don't waste time if all indivs are the same
+        pop[1].y[1] == pop[end].y[1] && return
         if C <: Number
             pop[1].crowding = pop[end].crowding = Inf
         else
