@@ -1,3 +1,6 @@
+#offspring = Array{Array{indiv}}(1000)
+#parents = Array{Array{indiv}}(1000)
+
 function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y,C}} where {G,Ph,Y,C}
 
     popSize = max(popSize, length(seed))
@@ -26,6 +29,8 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
 
             eval!(P[popSize+i], fdecode!, z, fCV)
             eval!(P[popSize+i+1], fdecode!, z, fCV)
+            #parents[gen] = deepcopy(P[1:popSize])
+            #offspring[gen] = deepcopy(P[popSize+1:2*popSize])
         end
 
         fast_non_dominated_sort!(P, sense, lexico)
@@ -41,16 +46,16 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
             end
             indnext == 0 && (indnext = length(P))
             crowding_distance_assignment!(view(P, ind+1:indnext))
+            shuffle!(view(P, ind+1:indnext))    #EXPERIMENTAL to increase diversity
             sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
         end
         gen == plotevery && println("Loading plot...")
         gen % plotevery == 0 && fplot(P, gen)
     end
 
-    fplot(P, nbGen)    #(default)
-    #filter(x->x.rank==1, view(P, 1:popSize)) #comment if you want to plot all solutions (unfiltered)
-    #fplot(view(P, 1:popSize), 0) #DEBUG
+    fplot(P, nbGen)
     view(P, 1:popSize)  #returns the first half of array (dominated and not)
+    #P
 end
 
 function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, lexico::Bool) where {T}
@@ -138,5 +143,11 @@ end
 
 function tournament_selection(P)
     a, b = rand(1:length(P)÷2), rand(1:length(P)÷2)
-    P[a] < P[b] ? P[a] : P[b]
+    if P[a] < P[b]
+        return P[a]
+    elseif P[b] < P[a]
+        return P[b]
+    else
+        return rand(Bool) ? P[a] : P[b]
+    end
 end
