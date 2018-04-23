@@ -29,68 +29,34 @@ end
 struct Max end
 struct Min end
 
-function dominates(sense, a::indiv, b::indiv, lexico::Bool)
-    if lexico
-        return lexico_dominates(sense, a, b)
-    else
-        return standard_dominates(sense, a, b)
-    end
-end
-
-function standard_dominates(::Min, a::indiv, b::indiv)
+function dominates(::Min, a::indiv, b::indiv, gp::Int, ignoregp::Bool)
     a.CV != b.CV && return a.CV < b.CV
     res = false
     for i in eachindex(a.y)
-        @inbounds a.y[i] > b.y[i] && return false
-        @inbounds a.y[i] < b.y[i] && (res=true)
+        if ignoregp
+            @inbounds a.y[i] > b.y[i] && return false
+            @inbounds a.y[i] < b.y[i] && (res=true)
+        else
+            @inbounds a.y[i][gp] > b.y[i][gp] && return false
+            @inbounds a.y[i][gp] < b.y[i][gp] && (res=true)
+        end
     end
     res
 end
 
-function standard_dominates(::Max, a::indiv, b::indiv)
+function dominates(::Max, a::indiv, b::indiv, gp::Int, ignoregp::Bool)
     a.CV != b.CV && return a.CV < b.CV
     res = false
     for i in eachindex(a.y)
-        @inbounds a.y[i] < b.y[i] && return false
-        @inbounds a.y[i] > b.y[i] && (res=true)
+        if ignoregp
+            @inbounds a.y[i] < b.y[i] && return false
+            @inbounds a.y[i] > b.y[i] && (res=true)
+        else
+            @inbounds a.y[i][gp] < b.y[i][gp] && return false
+            @inbounds a.y[i][gp] > b.y[i][gp] && (res=true)
+        end
     end
     res
-end
-
-function lexico_dominates(::Min, a::indiv, b::indiv)
-    a.CV != b.CV && return a.CV < b.CV
-    for p in reverse(eachindex(a.y[1]))    #for each power p
-        dominates = false
-        dominated = false
-        for i in eachindex(a.y)            #for each objective i
-            a.y[i][p] > b.y[i][p] && (dominated=true)
-            a.y[i][p] < b.y[i][p] && (dominates=true)
-        end
-        if (dominates && !dominated)
-            return true
-        elseif (dominated && !dominates)
-            return false
-        end
-    end
-    return false
-end
-
-function lexico_dominates(::Max, a::indiv, b::indiv)
-    a.CV != b.CV && return a.CV < b.CV
-    for p in reverse(eachindex(a.y[1]))    #for each power p
-        dominates = false
-        dominated = false
-        for i in eachindex(a.y)            #for each objective i
-            a.y[i][p] < b.y[i][p] && (dominated=true)
-            a.y[i][p] > b.y[i][p] && (dominates=true)
-        end
-        if (dominates && !dominated)
-            return true
-        elseif (dominated && !dominates)
-            return false
-        end
-    end
-    return false
 end
 
 Base.:(==)(a::indiv, b::indiv) = a.x == b.x

@@ -13,7 +13,26 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
     for i=1:popSize
         P[popSize+i] = deepcopy(P[i])
     end
-    fast_non_dominated_sort!(view(P, 1:popSize), sense, lexico)
+
+    if lexico && isa(P[1].y[1], AbstractArray)
+        println("Lexico dominance, gross objects")
+        const highestgp = 0     #highest power in the lexico order
+        const lowestpower = first(eachindex(P[1].y[1])) #lowest power
+        const ignoregp = false  #don't consider the power (used by dominates())
+    elseif !lexico && isa(P[1].y[1], AbstractArray)
+        println("Standard dominance, gross objects")
+        const highestgp = 0
+        const lowestpower = 0
+        const ignoregp = true
+    else
+        println("Standard dominance, scalar objects")
+        const highestgp = 1
+        const lowestpower = 1
+        const ignoregp = false
+    end
+
+    #this first fast_non_dominated_sort call is necessary for tournament selection
+    fast_non_dominated_sort!(view(P, 1:popSize), sense, highestgp, 1, ignoregp)
 
     @showprogress refreshtime for gen = 1:nbGen
 
@@ -33,56 +52,61 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
             #offspring[gen] = deepcopy(P[popSize+1:2*popSize])
         end
 
-        fast_non_dominated_sort!(P, sense, lexico)
-        sort!(P, by = x->x.rank, alg=Base.Sort.QuickSort)
-
-        let f::Int = 1
-            ind = 0
-            indnext = findlast(x->x.rank==f, P)
+        ind = 0         #ind+1 is the first index we consider while iterating over the fronts
+        indnext = 0     #indnext points to the last element of a front
+        indmax = 2*popSize  #indmax is the last index we consider while iterating (last index of superfront)
+        gp = highestgp  #power of the lexico order currently considered
+        f = 1           #current front
+        while (gp >= lowestpower)   #iterate over the lexico powers
+            fast_non_dominated_sort!(view(P, ind+1:indmax), sense, gp, f, ignoregp)
+            sort!(view(P, ind+1:indmax), by = x->x.rank, alg=Base.Sort.QuickSort)
+            indnext = findlast(x->x.rank==f, view(P, 1:indmax))
             while 0 < indnext <= popSize
                 ind = indnext
                 f += 1
-                indnext = findlast(x->x.rank==f, P)
+                indnext = findlast(x->x.rank==f, view(P, 1:indmax))
             end
-            indnext == 0 && (indnext = length(P))
-            crowding_distance_assignment!(view(P, ind+1:indnext))
-            shuffle!(view(P, ind+1:indnext))    #EXPERIMENTAL to increase diversity
-            sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
+            indnext == 0 && (indnext = indmax)
+            indmax = indnext
+            gp -= 1
         end
+        crowding_distance_assignment!(view(P, ind+1:indnext))
+        shuffle!(view(P, ind+1:indnext))    #prevents asymmetries in the choice
+        sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
+
         gen == plotevery && println("Loading plot...")
         gen % plotevery == 0 && fplot(P, gen)
     end
 
     fplot(P, nbGen)
     view(P, 1:popSize)  #returns the first half of array (dominated and not)
-    #P
 end
 
-function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, lexico::Bool) where {T}
+function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, gp::Int, firstrank::Int, ignoregp::Bool=false) where {T}
     n = length(pop)
 
     for p in pop
         empty!(p.dom_list)
         p.dom_count = 0
-        p.rank = 0
+        p.rank = firstrank - 1
     end
 
     @inbounds for i in 1:n
         for j in i+1:n
-            if dominates(sense, pop[i], pop[j], lexico)
+            if dominates(sense, pop[i], pop[j], gp, ignoregp)
                 push!(pop[i].dom_list, j)
                 pop[j].dom_count += 1
-            elseif dominates(sense, pop[j], pop[i], lexico)
+            elseif dominates(sense, pop[j], pop[i], gp, ignoregp)
                 push!(pop[j].dom_list, i)
                 pop[i].dom_count += 1
             end
         end
         if pop[i].dom_count == 0
-            pop[i].rank = 1
+            pop[i].rank = firstrank
         end
     end
 
-    k = UInt16(2)
+    k = UInt16(firstrank + 1)
     @inbounds while any(==(k-one(UInt16)), (p.rank for p in pop)) #ugly workaround for #15276
         for p in pop
             if p.rank == k-one(UInt16)
