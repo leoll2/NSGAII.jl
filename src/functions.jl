@@ -1,4 +1,6 @@
-function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y,C}} where {G,Ph,Y,C}
+function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!,
+    fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime;
+    binarycoding::BinaryCoding=nothing)::Vector{indiv{G,Ph,Y,C}} where {G,Ph,Y,C}
 
     popSize = max(popSize, length(seed))
     isodd(popSize) && (popSize += 1)
@@ -43,7 +45,7 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
             pa = tournament_selection(P)
             pb = tournament_selection(P)
 
-            crossover!(pa, pb, fcross, P[popSize+i], P[popSize+i+1])
+            crossover!(pa, pb, fcross, P[popSize+i], P[popSize+i+1], binarycoding)
 
             rand() < pmut && mutate!(P[popSize+i], fmut)
             rand() < pmut && mutate!(P[popSize+i+1], fmut)
