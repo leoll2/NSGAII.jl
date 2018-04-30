@@ -1,6 +1,3 @@
-#offspring = Array{Array{indiv}}(1000)
-#parents = Array{Array{indiv}}(1000)
-
 function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecode, fdecode!, fCV , pmut, fmut, fcross, seed, fplot, plotevery, refreshtime)::Vector{indiv{G,Ph,Y,C}} where {G,Ph,Y,C}
 
     popSize = max(popSize, length(seed))
@@ -29,10 +26,15 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
         const highestgp = 1
         const lowestpower = 1
         const ignoregp = false
+        lexico = false  #lexico and nonlexico approaches are the same in this case
     end
 
-    #this first fast_non_dominated_sort call is necessary for tournament selection
-    fast_non_dominated_sort!(view(P, 1:popSize), sense, highestgp, 1, ignoregp)
+    #this call to fast_non_dominated_sort is necessary for tournament selection
+    if lexico
+        lexico_fast_non_dominated_sort!(view(P, 1:popSize), sense, lowestpower)
+    else
+        fast_non_dominated_sort!(view(P, 1:popSize), sense, highestgp, 1, ignoregp)
+    end
 
     @showprogress refreshtime for gen = 1:nbGen
 
@@ -48,31 +50,27 @@ function _nsga(::indiv{G,Ph,Y,C}, sense, lexico, popSize, nbGen, init, z, fdecod
 
             eval!(P[popSize+i], fdecode!, z, fCV)
             eval!(P[popSize+i+1], fdecode!, z, fCV)
-            #parents[gen] = deepcopy(P[1:popSize])
-            #offspring[gen] = deepcopy(P[popSize+1:2*popSize])
         end
 
-        ind = 0         #ind+1 is the first index we consider while iterating over the fronts
-        indnext = 0     #indnext points to the last element of a front
-        indmax = 2*popSize  #indmax is the last index we consider while iterating (last index of superfront)
-        gp = highestgp  #power of the lexico order currently considered
-        f = 1           #current front
-        while (gp >= lowestpower)   #iterate over the lexico powers
-            fast_non_dominated_sort!(view(P, ind+1:indmax), sense, gp, f, ignoregp)
-            sort!(view(P, ind+1:indmax), by = x->x.rank, alg=Base.Sort.QuickSort)
-            indnext = findlast(x->x.rank==f, view(P, 1:indmax))
+        if lexico
+            lexico_fast_non_dominated_sort!(P, sense, lowestpower)
+        else
+            fast_non_dominated_sort!(P, sense, highestgp, 1, ignoregp)
+        end
+        let f::Int = 1
+            ind = 0
+            indnext = findlast(x->x.rank==f, P)
             while 0 < indnext <= popSize
+                crowding_distance_assignment!(view(P, ind+1:indnext), lexico)
                 ind = indnext
                 f += 1
-                indnext = findlast(x->x.rank==f, view(P, 1:indmax))
+                indnext = findlast(x->x.rank==f, P)
             end
-            indnext == 0 && (indnext = indmax)
-            indmax = indnext
-            gp -= 1
+            indnext == 0 && (indnext = length(P))
+            crowding_distance_assignment!(view(P, ind+1:indnext), lexico)
+            shuffle!(view(P, ind+1:indnext))    #prevents asymmetries in the choice
+            sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
         end
-        crowding_distance_assignment!(view(P, ind+1:indnext))
-        shuffle!(view(P, ind+1:indnext))    #prevents asymmetries in the choice
-        sort!(view(P, ind+1:indnext), by = x -> x.crowding, rev=true, alg=PartialQuickSort(popSize-ind))
 
         gen == plotevery && println("Loading plot...")
         gen % plotevery == 0 && fplot(P, gen)
@@ -120,11 +118,42 @@ function fast_non_dominated_sort!(pop::AbstractVector{T}, sense, gp::Int, firstr
         end
         k += one(UInt16)
     end
+    sort!(pop, by = x->x.rank, alg=Base.Sort.QuickSort)
+    return k-UInt16(2)    #last rank assigned
+end
+
+function lexico_fast_non_dominated_sort!(pop::AbstractVector{T}, sense, minpower::Int) where {T}
+    n = length(pop)
+    for ind in pop      #initialize all ranks to 1
+        ind.rank = 1
+    end
+    glob_highest_rank = 1
+    for gp in 0:-1:minpower
+        ind = 1
+        last_rank_used = 0
+        for i in 1:glob_highest_rank
+            nextind = findfirst(x->x.rank==i+1, view(pop, ind:n)) + ind - 1
+            if nextind == 0
+                nextind = n+1
+            end
+            last_rank_used = fast_non_dominated_sort!(view(pop, ind:nextind-1), sense, gp, last_rank_used+1, false)
+            ind = nextind
+        end
+        glob_highest_rank = last_rank_used
+    end
+end
+
+function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y,C}}, lexico::Bool) where {X, G, Y, C}
+    @assert (C <: Number || C <: AbstractArray)
+    if lexico && C <: AbstractArray
+        lexico_crowding_distance!(pop)
+    else
+        nonlexico_crowding_distance!(pop)
+    end
     nothing
 end
 
-function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y,C}}) where {X, G, Y, C}
-    @assert (C <: Number || C <: AbstractArray)
+function nonlexico_crowding_distance!(pop::AbstractVector{indiv{X,G,Y,C}}) where {X, G, Y, C}
     if length(first(pop).y) == 2
         sort!(pop, by=x->x.y[1])
         pop[1].y[1] == pop[end].y[1] && return
@@ -165,13 +194,35 @@ function crowding_distance_assignment!(pop::AbstractVector{indiv{X,G,Y,C}}) wher
     end
 end
 
+function lexico_crowding_distance!(pop::AbstractVector{indiv{X,G,Y,C}}) where {X, G, Y, C <: AbstractArray}
+    for ind in pop      #zero-out crowding distance
+        for p in eachindex(ind.crowding)
+            ind.crowding[p] = 0.
+        end
+    end
+
+    for p in reverse(eachindex(first(pop).crowding))     # Foreach level of priority
+        @inbounds for j = 1:length(first(pop).y)         # Foreach objective in this priority level
+            let j = j #https://github.com/JuliaLang/julia/issues/15276
+                sort!(pop, by = x-> x.y[j][p])      #sort by the objective value
+            end
+            pop[1].crowding[p] = pop[end].crowding[p] = Inf
+            if pop[1].y[j][p] != pop[end].y[j][p]
+                for i = 2:length(pop)-1
+                    pop[i].crowding[p] += (pop[i+1].y[j][p]-pop[i-1].y[j][p]) / (pop[end].y[j][p]-pop[1].y[j][p])
+                end
+            end
+        end
+    end
+end
+
 function tournament_selection(P)
     a, b = rand(1:length(P)÷2), rand(1:length(P)÷2)
-    if P[a] < P[b]
+    if P[a] < P[b]      #return the best one (crowded comparison operator)
         return P[a]
     elseif P[b] < P[a]
         return P[b]
     else
-        return rand(Bool) ? P[a] : P[b]
+        return rand(Bool) ? P[a] : P[b]    #choose randomly if they're equal
     end
 end

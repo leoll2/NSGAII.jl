@@ -1,7 +1,7 @@
 __precompile__()
 module NSGAII
 
-export nsga, nsga_max, nsga_binary, BinaryCoding#, offspring, parents
+export nsga, nsga_max, nsga_binary, BinaryCoding, dominates#, offspring, parents
 using ProgressMeter, Compat, Compat.Random, Compat.LinearAlgebra
 
 include("indivs.jl")
